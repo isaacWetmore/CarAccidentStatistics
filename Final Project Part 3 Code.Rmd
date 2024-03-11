@@ -1,0 +1,709 @@
+---
+title: "Final Project Part 3"
+author: "Isaac Wetmore"
+date: "2022-12-20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(broom) ## Needed to make the regression output 'tidy'
+library(ggplot2)
+library(car)
+library(Matrix)
+library(caTools)
+library(UsingR)
+library(scatterplot3d)
+library(xtable)
+library(MPV)
+library(glmnet)
+library(rms)
+library(MASS)
+library(caret)
+
+```
+
+## Introduction
+
+Below is an EDA for each of the proposed variables of analysis. Below are five variables of interest that may serve as predictive variables for the responding variable (number of car accident deaths). Each variable will be considered individually. 
+
+
+## Responding Varible: Number of Car Deaths
+Measured as Deaths per 1 million inhabitants.
+
+```{r pressure, echo=FALSE}
+road_deaths = read.csv("DP_LIVE_20102022040338492.csv")
+
+names(road_deaths)[names(road_deaths) == "Value"] <- "Car.Deaths (Deaths per 1m inhabitants)"
+
+road_deaths = subset(road_deaths, select = c("LOCATION", "TIME", "Car.Deaths (Deaths per 1m inhabitants)"))
+
+
+summary(road_deaths)
+
+Car_Deaths = road_deaths$`Car.Deaths (Deaths per 1m inhabitants)`
+
+hist(Car_Deaths, main = "Histogram of Car Deaths", xlab = "Car Deaths (Deaths per 1m inhabitants)")
+
+road_deaths %>% 
+  dplyr::select(`Car.Deaths (Deaths per 1m inhabitants)`) %>% 
+  map_df(.f = ~ broom::tidy(summary(.x)), .id = "Variable") %>%
+  kable(caption = "Basic Summary Statistics for Car Deaths")
+
+```
+## Predictor Varible 1: GDP
+
+```{r pressure, echo=FALSE}
+gdp = read.csv("GDP.csv")
+
+names(gdp)[names(gdp) == "Value"] <- "GDP.Per.Captia (US Dollar/Captia)"
+
+gdp = subset(gdp, select = c("LOCATION", "TIME", "GDP.Per.Captia (US Dollar/Captia)"))
+
+summary(gdp)
+hist(gdp$`GDP.Per.Captia (US Dollar/Captia)`, main = "Histogram of GDP Per Captia", xlab = "GDP Per Captia (US Dollar/Captia)")
+
+merged1 = merge(road_deaths, gdp, by = c("LOCATION", "TIME"))
+
+p <- ggplot(merged1, aes(x=`GDP.Per.Captia (US Dollar/Captia)`, y=`Car.Deaths (Deaths per 1m inhabitants)`)) + geom_point()
+p + scale_color_brewer(palette="Dark2") + theme_minimal() + ggtitle("Car Accident Deaths as a Function of GDP Per Captia") + xlab("GDP Per Captia (US Dollar/Captia)") + ylab("Car Deaths (Deaths per 1m Inhabitants)")
+
+
+merged1 %>% 
+  dplyr::select(`GDP.Per.Captia (US Dollar/Captia)`) %>% 
+  map_df(.f = ~ broom::tidy(summary(.x)), .id = "Variable") %>%
+  kable(caption = "Basic Summary Statistics for GDP Per Captia")
+
+
+
+
+```
+
+
+## Predictor Varible 2: Alcohol Consumption
+Measured as Litres/Captia
+```{r pressure, echo=FALSE}
+alcohol = read.csv("Alcohol.csv")
+
+names(alcohol)[names(alcohol) == "Value"] <- "Alcohol.Consumption.Per.Captia (L/Captia)"
+
+alcohol = subset(alcohol, select = c("LOCATION", "TIME", "Alcohol.Consumption.Per.Captia (L/Captia)"))
+
+summary(alcohol)
+hist(alcohol$`Alcohol.Consumption.Per.Captia (L/Captia)`, main = "Histogram of Alcohol Consumption", xlab = "Alcohol Consumption (L/Captia)")
+merged2 = merge(road_deaths, alcohol, by = c("LOCATION", "TIME"))
+
+p <- ggplot(merged2, aes(x=`Alcohol.Consumption.Per.Captia (L/Captia)`, y=`Car.Deaths (Deaths per 1m inhabitants)`)) + geom_point()
+p + scale_color_brewer(palette="Dark2") + theme_minimal() + ggtitle("Car Accident Deaths as a Function of Alcohol Consumption") + xlab("Alcohol Consumption (L/Captia)") + ylab("Car Deaths (Deaths per 1m Inhabitants)")
+
+
+merged2 %>% 
+  dplyr::select(`Alcohol.Consumption.Per.Captia (L/Captia)`) %>% 
+  map_df(.f = ~ broom::tidy(summary(.x)), .id = "Variable") %>%
+  kable(caption = "Basic Summary Statistics for Alcohol Consumption")
+
+```
+## Predictor Varible 3: Healthcare Spending
+Measured as US Dollars/Captia
+```{r pressure, echo=FALSE}
+healthcare = read.csv("Healthcare.csv")
+
+names(healthcare)[names(healthcare) == "Value"] <- "healthcare.Per.Captia (US Dollar/Captia)"
+
+healthcare = subset(healthcare, select = c("LOCATION", "TIME", "healthcare.Per.Captia (US Dollar/Captia)"))
+
+
+
+
+summary(healthcare)
+hist(healthcare$`healthcare.Per.Captia (US Dollar/Captia)`, main = "Histogram of Healthcare Per Captia", xlab = "Healthcare Per Captia")
+merged3 = merge(road_deaths, healthcare, by = c("LOCATION", "TIME"))
+
+
+healthcare_per_gdp = merge(gdp, healthcare, by = c('LOCATION', "TIME"))
+
+healthcare_per_gdp %>% mutate(healthcare.per.gdp = `healthcare.Per.Captia (US Dollar/Captia)`/`GDP.Per.Captia (US Dollar/Captia)`*100) -> healthcare_per_gdp
+
+merged_test = merge(healthcare_per_gdp, road_deaths, by = c("LOCATION", "TIME"))
+
+
+
+p <- ggplot(merged3, aes(x=`healthcare.Per.Captia (US Dollar/Captia)`, y=`Car.Deaths (Deaths per 1m inhabitants)`)) + geom_point()
+p + scale_color_brewer(palette="Dark2") + theme_minimal() + ggtitle("Car Accident Deaths as a Function of Healthcare Spending") + xlab("Healthcare Spending (US Dollar/Captia)") + ylab("Car Deaths (Deaths per 1m Inhabitants)")
+
+
+
+
+
+merged3 %>% 
+  dplyr::select(`healthcare.Per.Captia (US Dollar/Captia)`) %>% 
+  map_df(.f = ~ broom::tidy(summary(.x)), .id = "Variable") %>%
+  kable(caption = "Basic Summary Statistics for Healthcare Spending")
+
+
+
+
+```
+
+
+## Predictor Varible 4: Mobile Subs
+```{r pressure, echo=FALSE}
+mobile_subs = read.csv("mobile internet.csv")
+
+names(mobile_subs)[names(mobile_subs) == "Value"] <- "Mobile.Subs (Per 100 Inhabitants)"
+
+mobile_subs = subset(mobile_subs, select = c("LOCATION", "TIME", "Mobile.Subs (Per 100 Inhabitants)"))
+
+summary(mobile_subs)
+hist(mobile_subs$`Mobile.Subs (Per 100 Inhabitants)`, main = "Mobile Data Plan Subscriptions", xlab = "Mobile Subs (Per 100 Inhabitants)")
+
+merged5 = merge(road_deaths, mobile_subs, by = c("LOCATION", "TIME"))
+
+p <- ggplot(merged5, aes(x=`Mobile.Subs (Per 100 Inhabitants)`, y=`Car.Deaths (Deaths per 1m inhabitants)`)) + geom_point()
+p + scale_color_brewer(palette="Dark2") + theme_minimal() + ggtitle("Car Accident Deaths as a Function of Mobile Subscriptions") + xlab("Mobile Subs (Per 100 Inhabitants)") + ylab("Car Deaths (Deaths per 1m Inhabitants)")
+
+merged5 %>% 
+  dplyr::select(`Mobile.Subs (Per 100 Inhabitants)`) %>% 
+  map_df(.f = ~ broom::tidy(summary(.x)), .id = "Variable") %>%
+  kable(caption = "Basic Summary Statistics for Mobile Subscriptions")
+
+```
+
+
+## Predictor Varible 5: Transport Infrastructure
+```{r pressure, echo=FALSE}
+road_maint = read.csv("road_maint.csv", header = T)
+world_pop = read.csv("DP_LIVE_20102022041857078.csv")
+road_invest = read.csv("road_investment.csv")
+
+names(road_maint)[names(road_maint) == "Value"] <- "Road Maint (Euro Per Capita))"
+names(road_invest)[names(road_invest) == "Value"] <- "Road Investment"
+
+road_maint %>% filter(SUBJECT == "ROAD") -> road_maint
+road_invest %>% filter(SUBJECT == "ROAD") -> road_invest
+
+road_maint = subset(road_maint, select = c("LOCATION", "TIME", "Road Maint (Euro Per Capita))"))
+road_invest = subset(road_invest, select = c("LOCATION", "TIME", "Road Investment"))
+
+road_maint = merge(road_maint, world_pop, by = c("LOCATION", "TIME"))
+road_invest = merge(road_invest, world_pop, by = c("LOCATION", "TIME"))
+
+road_maint %>% mutate(Road.Maintenance.Per.Captia = `Road Maint (Euro Per Capita))`/(Value*1000000)) -> road_maint
+road_invest %>% mutate(Road.Investment.Per.Captia = `Road Investment`/(Value*1000000)) -> road_invest
+
+merged6 = merge(road_maint, road_deaths, by = c("LOCATION", "TIME"))
+
+hist(road_maint$`Road.Maintenance.Per.Captia`, main = "Road Maintenance Histogram", xlab = "Road Maintenance (EURO Per Captia)")
+
+p <- ggplot(merged6, aes(x=`Road.Maintenance.Per.Captia`, y=`Car.Deaths (Deaths per 1m inhabitants)`)) + geom_point()
+p + scale_color_brewer(palette="Dark2") + theme_minimal() + xlab("Road Infrastructure Investment") + ggtitle("Car Accident Deaths as a Function of Transport Maintenance Subscriptions") + xlab("Road Maint (Euro Per Capita)") + ylab("Car Deaths (Deaths per 1m Inhabitants)")
+
+
+p <- ggplot(merged6, aes(x=`Road.Maintenance.Per.Captia`, y=`Car.Deaths (Deaths per 1m inhabitants)`)) + geom_point()
+p + scale_color_brewer(palette="Dark2") + theme_minimal() + xlab("Road Infrastructure Investment") + ggtitle("Car Accident Deaths as a Function of Transport Maintenance Subscriptions") + xlab("Road Maint (Euro Per Capita)") + ylab("Car Deaths (Deaths per 1m Inhabitants)")
+
+
+merged6 %>% 
+  dplyr::select(`Road.Maintenance.Per.Captia`) %>% 
+  map_df(.f = ~ broom::tidy(summary(.x)), .id = "Variable") %>%
+  kable(caption = "Basic Summary Statistics for Road Maintenance Per Captia")
+
+
+
+
+```
+
+
+
+
+## Part 3 of Analysis:
+
+Much of this analysis uses code found in lecture notes 1-10 in STA302. 
+
+Merging of data.
+
+```{r, eval=T, echo=F}
+
+personal_factors = merge(mobile_subs, alcohol, by = c("LOCATION", "TIME"))
+
+macro_factors = merge(healthcare_per_gdp, road_maint, by = c("LOCATION", "TIME"))
+
+full = merge(macro_factors, personal_factors, by = c("LOCATION", "TIME"))
+
+full = merge(full, road_deaths, by = c("LOCATION", "TIME"))
+
+```
+
+
+```{r, eval = T, echo = T}
+
+### Fit the model and get the levarage points ##
+
+model <- lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `GDP.Per.Captia (US Dollar/Captia)`, data = full)
+## Calculate h_ii ##
+hii <- hatvalues(model)
+## Identify the levaearges ##
+which(hii > 4/nrow(full))
+## The standardized residuals ##
+r <- rstudent(model)
+which(r <= -2 | r >= 2)
+r[which(hii > 4/nrow(full))]
+
+### Plot using Base R ###
+par(family = 'serif')
+plot(full$`GDP.Per.Captia (US Dollar/Captia)`, r, type = "p", xlab = "GDP Per Captia", ylab = "Standardized Residuals",
+     main = "Standardized Residuals", col = ifelse(hii > 4/nrow(full), "red", "blue"))
+text(full$`GDP.Per.Captia (US Dollar/Captia)`[hii > 4/nrow(full)]+0.5, r[hii > 4/nrow(full)], labels = which(hii > 4/nrow(full)))
+
+
+D <- cooks.distance(model)
+lev<- which(D > 4/(nrow(full)-2))
+
+par(family = 'serif')
+plot(full$`GDP.Per.Captia (US Dollar/Captia)`, D, type = "p", xlab = "GDP Per Captia (US Dollar/Captia)", ylab = "Cook's Distances",
+     main = "Cook's Distance", col = ifelse(D > 4/(nrow(full)-2), "red", "blue"))
+abline(h = 2, lty = 2)
+abline(h = -2, lty = 2)
+text(full$`GDP.Per.Captia (US Dollar/Captia)`[D > 4/(nrow(full)-2)]+0.5, D[D > 4/(nrow(full)-2)], 
+     labels = which(D > 4/(nrow(full)-2)) )
+
+```
+
+## Influenctial Observations
+
+```{r, eval = T, echo = T}
+
+
+## The personal model ##
+model.full.personal <- lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `Alcohol.Consumption.Per.Captia (L/Captia)` + `Mobile.Subs (Per 100 Inhabitants)`, data = full)
+
+## The hat values ###
+h <- hatvalues(model.full.personal)
+thresh <- 2 * (dim(model.matrix(model.full.personal))[2])/nrow(full)
+w <- which(h > thresh)
+w
+full[w,]
+
+
+### The Influential Observations ####
+D <- cooks.distance(model.full.personal)
+d = which(D > qf(0.5, 3, nrow(full)-3))
+full[d,]
+
+## DFFITS ##
+dfits <- dffits(model.full.personal)
+d2 = which(abs(dfits) > 2*sqrt(3/nrow(full)))
+full[d2,]
+
+## DFBETAS ##
+dfb <- dfbetas(model.full.personal)
+d3 = which(abs(dfb[,2]) > 2/sqrt(nrow(full)))
+full[d3,]
+
+
+## The macro model ##
+model.full.macro <- lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `GDP.Per.Captia (US Dollar/Captia)` + healthcare.per.gdp + `Road.Maintenance.Per.Captia`, data = full)
+
+## The hat values ###
+h <- hatvalues(model.full.macro)
+thresh <- 2 * (dim(model.matrix(model.full.macro))[2])/nrow(full)
+w <- which(h > thresh)
+w
+full[w,]
+
+
+### The Influential Observations ####
+D <- cooks.distance(model.full.macro)
+d = which(D > qf(0.5, 4, nrow(full)-4))
+full[d,]
+
+## DFFITS ##
+dfits <- dffits(model.full.macro)
+d2 = which(abs(dfits) > 2*sqrt(4/nrow(full)))
+full[d2,]
+
+## DFBETAS ##
+dfb <- dfbetas(model.full.macro)
+d3 = which(abs(dfb[,2]) > 2/sqrt(nrow(full)))
+full[d3,]
+
+
+full_leverages_adj = subset(full, LOCATION!= "LUX" & LOCATION!= "POL") 
+
+
+## The Full Model ##
+
+
+model.personal.macro = lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `Alcohol.Consumption.Per.Captia (L/Captia)` + `Mobile.Subs (Per 100 Inhabitants)` +  `GDP.Per.Captia (US Dollar/Captia)` + healthcare.per.gdp + `Road.Maintenance.Per.Captia`, data = full)
+
+### The Influential Observations ####
+D <- cooks.distance(model.personal.macro)
+d = which(D > qf(0.5, 4, nrow(full)-4))
+full[d,]
+
+## DFFITS ##
+dfits <- dffits(model.personal.macro)
+d2 = which(abs(dfits) > 2*sqrt(4/nrow(full)))
+full[d2,]
+
+## DFBETAS ##
+dfb <- dfbetas(model.personal.macro)
+d3 = which(abs(dfb[,2]) > 2/sqrt(nrow(full)))
+full[d3,]
+
+
+```
+
+## Transformations for individual models
+
+```{r, eval = T, echo = T}
+
+model.full.macro <- lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `GDP.Per.Captia (US Dollar/Captia)` + healthcare.per.gdp + `Road.Maintenance.Per.Captia`, data = full_leverages_adj)
+
+
+resid.m <- rstudent(model.full.macro)
+fitted.m <- predict(model.full.macro)
+
+par(family = 'serif')
+qqnorm(resid.m)
+qqline(resid.m)
+plot(resid.m ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = "Standardized Residual", cex.lab = 1.2,
+     col = "red")
+lines(lowess(fitted.m, resid.m), col = "blue")
+
+
+par(family = 'serif')
+plot(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = "Car Deaths", cex.lab = 1.2,
+     col = "red")
+abline(lm(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.m), lwd = 2, col = "blue")
+lines(lowess(fitted.m, full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`), col = "red")
+
+
+## Power Transformation ##
+mult <- lm(cbind(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`, full_leverages_adj$healthcare.per.gdp, full_leverages_adj$`Road.Maintenance.Per.Captia`, full_leverages_adj$`GDP.Per.Captia (US Dollar/Captia)`) ~ 1)
+bc <- powerTransform(mult)
+summary(bc)
+
+
+## Log Transformation on all variables 
+
+model.macro.new <- lm(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I(log(`GDP.Per.Captia (US Dollar/Captia)`)) + I(log(healthcare.per.gdp)) + I(log(`Road.Maintenance.Per.Captia`)), data = full_leverages_adj)
+
+r.m.new <- rstudent(model.macro.new)
+fitted.m.new <- predict(model.macro.new)
+
+
+par(family = 'serif', mfrow = c(1,2))
+qqnorm(r.m.new)
+qqline(r.m.new)
+abline(a = 0, b = 1)
+plot(r.m.new ~ fitted.m.new, type = "p", xlab = "Fitted Values", 
+     ylab = "Standardized Residual", cex.lab = 1.2,
+     col = "red")
+lines(lowess(fitted.m.new, r.m.new), col = "blue")
+
+
+par(family = 'serif')
+plot(log(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`) ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = expression(log("Car Deaths")), cex.lab = 1.2,
+     col = "red")
+abline(lm(I(log(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`)) ~ fitted.m), lwd = 2, col = "blue")
+lines(lowess(fitted.m, log(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`)), col = "red")
+
+
+```
+```{r, eval = T, echo = T}
+model.full.personal <- lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `Alcohol.Consumption.Per.Captia (L/Captia)` + `Mobile.Subs (Per 100 Inhabitants)`, data = full_leverages_adj)
+
+
+resid.p <- rstudent(model.full.personal)
+fitted.p <- predict(model.full.personal)
+
+par(family = 'serif')
+qqnorm(resid.p)
+qqline(resid.p)
+plot(resid.p ~ fitted.p, type = "p", xlab = "Fitted Values", 
+     ylab = "Standardized Residual", cex.lab = 1.2,
+     col = "red")
+lines(lowess(fitted.p, resid.p), col = "blue")
+
+
+par(family = 'serif')
+plot(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.p, type = "p", xlab = "Fitted Values", 
+     ylab = "Car Deaths", cex.lab = 1.2,
+     col = "red")
+abline(lm(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.p), lwd = 2, col = "blue")
+lines(lowess(fitted.p, full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`), col = "red")
+
+
+## Power Transformation ##
+mult <- lm(cbind(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`, full_leverages_adj$`Alcohol.Consumption.Per.Captia (L/Captia)`, full_leverages_adj$`Mobile.Subs (Per 100 Inhabitants)`) ~ 1)
+bc <- powerTransform(mult)
+summary(bc)
+
+
+## Log Transformation on all variables 
+
+model.personal.new <- lm(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I((`Alcohol.Consumption.Per.Captia (L/Captia)`)) + I((`Mobile.Subs (Per 100 Inhabitants)`)), data = full_leverages_adj)
+
+r.m.new <- rstudent(model.personal.new)
+fitted.m.new <- predict(model.personal.new)
+
+
+par(family = 'serif', mfrow = c(1,2))
+qqnorm(r.m.new)
+qqline(r.m.new)
+abline(a = 0, b = 1)
+plot(r.m.new ~ fitted.m.new, type = "p", xlab = "Fitted Values", 
+     ylab = "Standardized Residual", cex.lab = 1.2,
+     col = "red")
+lines(lowess(fitted.m.new, r.m.new), col = "blue")
+
+
+par(family = 'serif')
+plot(log(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`) ~ fitted.p, type = "p", xlab = "Fitted Values", 
+     ylab = expression(log("Car Deaths")), cex.lab = 1.2,
+     col = "red")
+abline(lm(I(log(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`)) ~ fitted.p), lwd = 2, col = "blue")
+lines(lowess(fitted.p, log(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`)), col = "red")
+```
+
+
+## FULL MODEL TRANSFORMATION
+
+```{r, eval=TRUE, echo=FALSE}
+model.personal.macro = lm(`Car.Deaths (Deaths per 1m inhabitants)` ~ `Alcohol.Consumption.Per.Captia (L/Captia)` + `Mobile.Subs (Per 100 Inhabitants)` +  `GDP.Per.Captia (US Dollar/Captia)` + healthcare.per.gdp + `Road.Maintenance.Per.Captia`, data = full_leverages_adj)
+
+
+resid.m <- rstudent(model.personal.macro)
+fitted.m <- predict(model.personal.macro)
+
+par(family = 'serif')
+qqnorm(resid.m)
+qqline(resid.m)
+plot(resid.m ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = "Standardized Residual", cex.lab = 1.2,
+     col = "red")
+lines(lowess(fitted.m, resid.m), col = "blue")
+
+
+par(family = 'serif')
+plot(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = "Car Deaths", cex.lab = 1.2,
+     col = "red")
+abline(lm(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.m), lwd = 2, col = "blue")
+lines(lowess(fitted.m, full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`), col = "red")
+
+
+## Power Transformation ##
+mult <- lm(cbind(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`, full_leverages_adj$healthcare.per.gdp, full_leverages_adj$`Road.Maintenance.Per.Captia`, full_leverages_adj$`GDP.Per.Captia (US Dollar/Captia)`, full_leverages_adj$`Alcohol.Consumption.Per.Captia (L/Captia)`, full_leverages_adj$`Mobile.Subs (Per 100 Inhabitants)`) ~ 1)
+bc <- powerTransform(mult)
+summary(bc)
+
+##NOTE: Transformations applied to final model are slightly different to Box-cox recommendations, but for interpretability's sake some liberties were taken. Final model still addresses assumptions. 
+
+model.personal.macro.transformed = lm(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I((`Alcohol.Consumption.Per.Captia (L/Captia)`)**2) + I((`Mobile.Subs (Per 100 Inhabitants)`)**0.5) +  I(log(`GDP.Per.Captia (US Dollar/Captia)`)) + I(log(healthcare.per.gdp)) + I(log(`Road.Maintenance.Per.Captia`)), data = full_leverages_adj)
+
+resid.m <- rstudent(model.personal.macro.transformed)
+fitted.m <- predict(model.personal.macro.transformed)
+
+par(mfrow = c(1, 2))
+qqnorm(resid.m)
+qqline(resid.m)
+plot(resid.m ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = "Standardized Residual", cex.lab = 1.2,
+     col = "red")
+lines(lowess(fitted.m, resid.m), col = "blue")
+
+
+par(family = 'serif')
+plot(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.m, type = "p", xlab = "Fitted Values", 
+     ylab = "Car Deaths", cex.lab = 1.2,
+     col = "red")
+abline(lm(full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)` ~ fitted.m), lwd = 2, col = "blue")
+lines(lowess(fitted.m, full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`), col = "red")
+
+
+
+#Multicolinearity
+
+kable(data.frame(cor(full_leverages_adj[, c(5, 13, 3, 14, 15)])))
+
+## Multiple regression ##
+Xmat<- model.matrix(model.personal.macro.transformed)
+## Calculate the rank and trace of the matrix XTX
+XTX <- solve(t(Xmat)%*%Xmat)
+rankMatrix(XTX)
+H <- Xmat%*%XTX%*%t(Xmat)
+rankMatrix(H)
+summary(model.personal.macro.transformed)
+v = vif(model.personal.macro.transformed) 
+
+
+summary(model.personal.macro.transformed)
+
+
+
+```
+## MODEL SELECTION
+
+
+```{r, eval=TRUE, echo=FALSE}
+## Step wise regression ###
+set.seed(123)
+
+s = createDataPartition(y = full_leverages_adj$`Car.Deaths (Deaths per 1m inhabitants)`, times = 1, p = 0.7, list = FALSE)
+
+train = full_leverages_adj[s,]
+
+test = full_leverages_adj[-s,]
+
+model.lm = model.personal.macro.transformed
+
+
+n <- nrow(train)
+sel.var.bic <- step(model.lm, trace = 0, k = log(n), direction = "both") 
+select_var_bic<-attr(terms(sel.var.bic), "term.labels")   
+select_var_bic
+
+sel.var.aic <- step(model.lm, trace = 0, k = 2) #log(nrow(dat1)))
+select_var<-attr(terms(sel.var.aic), "term.labels")   
+select_var
+
+### LASSO selection ###
+
+## Perform cross validation to choose lambda ##
+set.seed(123)
+cv.out <- cv.glmnet(x = as.matrix(train[, c(5, 13, 3, 14, 15)]), y = train$`Car.Deaths (Deaths per 1m inhabitants)`, standardize = T, alpha = 1)
+plot(cv.out)
+best.lambda <- cv.out$lambda.1se
+best.lambda
+co<-coef(cv.out, s = "lambda.1se")
+
+#Selection of the significant features(predictors)
+
+## threshold for variable selection ##
+
+thresh <- 0.00
+# select variables #
+inds<-which(abs(co) > thresh )
+variables<-row.names(co)[inds]
+sel.var.lasso<-variables[!(variables %in% '(Intercept)')]
+sel.var.lasso
+```
+
+## CROSS VALIDATION
+
+```{r, eval=TRUE, echo=FALSE}
+
+set.seed(123)
+### Cross Validation and prediction performance of AIC based selection ###
+ols.aic <- ols(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I(log(`GDP.Per.Captia (US Dollar/Captia)`)) + I(log(healthcare.per.gdp)) + I(log(`Road.Maintenance.Per.Captia`)), data = train, x=T, y=T, model = T)
+
+## 10 fold cross validation ##    
+aic.cross <- calibrate(ols.aic, method = "crossvalidation", B = 10)
+
+
+## Calibration plot ##
+plot(aic.cross, las = 1, xlab = "Predicted LPSA", main = "Cross-Validation calibration with AIC")
+
+## Test Error ##
+pred.aic <- predict(ols.aic, newdata = test[,which(colnames(train) %in% c(sel.var.aic, "lpsa"))])
+## Prediction error ##
+pred.error.AIC <- mean((test$lpsa - pred.aic)^2)
+
+
+### Cross Validation and prediction performance of BIC based selection ###
+ols.bic <- ols(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I(log(`GDP.Per.Captia (US Dollar/Captia)`)), data = train, x=T, y=T, model = T)
+
+## 10 fold cross validation ##    
+bic.cross <- calibrate(ols.bic, method = "crossvalidation", B = 10)
+## Calibration plot ##
+plot(bic.cross, las = 1, xlab = "Predicted LPSA", main = "Cross-Validation calibration with BIC")
+
+
+## Test Error ##
+pred.bic <- predict(ols.bic, newdata = test[,which(colnames(train) %in% c(sel.var.bic, "lpsa"))])
+## Prediction error ##
+pred.error.BIC <- mean((test$lpsa - pred.bic)^2)
+
+### Cross Validation and prediction performance of lasso based selection ###
+ols.lasso <- ols(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I(log(`GDP.Per.Captia (US Dollar/Captia)`)), data = train, x=T, y=T, model = T)
+
+## 10 fold cross validation ##    
+lasso.cross <- calibrate(ols.lasso, method = "crossvalidation", B = 10)
+## Calibration plot ##
+plot(lasso.cross, las = 1, xlab = "Predicted LPSA", main = "Cross-Validation calibration with LASSO")
+
+## Test Error ##
+pred.lasso <- predict(ols.lasso, newdata = test[,which(colnames(train) %in% c(sel.var.lasso, "lpsa"))])
+## Prediction error ##
+pred.error.lasso <- mean((test$lpsa - pred.lasso)^2)
+
+print(c(pred.error.AIC, pred.error.BIC, pred.error.lasso))
+
+
+
+```
+
+
+
+
+## COMPARING MODELS
+
+```{r, eval=TRUE, echo=FALSE}
+
+criteria <- function(model){
+  n <- length(model$residuals)
+  p <- length(model$coefficients) - 1
+  RSS <- sum(model$residuals^2)
+  R2 <- summary(model)$r.squared
+  R2.adj <- summary(model)$adj.r.squared
+  AIC <- n*log(RSS/n) + 2*p
+  AICc <- AIC + (2*(p+2)*(p+3))/(n-p-1)
+  BIC <- n*log(RSS/n) + (p+2)*log(n)
+  res <- c(R2, R2.adj, AIC, AICc, BIC)
+  names(res) <- c("R Squared", "Adjsuted R Squared", "AIC", "AICc", "BIC")
+  return(res)
+}
+
+## The crteria ##
+## model with personal factors ##
+personal_crit <- criteria(model = model.personal.new)
+
+
+## model with macro factors ##
+macro_crit <- criteria(model = model.macro.new)
+
+## Model 4 ##
+gdp_crit = criteria(model = lm(I(log(`Car.Deaths (Deaths per 1m inhabitants)`)) ~ I(log(`GDP.Per.Captia (US Dollar/Captia)`)), data = full_leverages_adj))
+
+                    
+rbind(personal_crit, macro_crit, gdp_crit)
+
+```
+
+
+
+##Bibliography
+
+1. OECD (2022), Road accidents (indicator). doi: 10.1787/2fe1b899-en (Accessed on 21 October 2022)
+
+2. OECD (2022), Alcohol consumption (indicator). doi: 10.1787/e6895909-en (Accessed on 21 October 2022)
+
+3. OECD (2022), Health spending (indicator). doi: 10.1787/8643de7e-en (Accessed on 21 October 2022)
+
+4. OECD (2022), Gross domestic product (GDP) (indicator). doi: 10.1787/dc2f7aec-en (Accessed on 21 October 2022)
+
+5. OECD (2022), Hours worked (indicator). doi: 10.1787/47be1c78-en (Accessed on 21 October 2022)
+
+6. OECD (2022), Mobile broadband subscriptions (indicator). doi: 10.1787/1277ddc6-en (Accessed on 21 October 2022)
+
+7. OECD (2022), Population (indicator). doi: 10.1787/d434f82b-en (Accessed on 21 October 2022)
+
+8. OECD (2022), Infrastructure maintenance (indicator). doi: 10.1787/c73dc965-en (Accessed on 21 October 2022)
